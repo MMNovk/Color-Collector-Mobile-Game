@@ -1,0 +1,354 @@
+import pygame
+import random
+import math
+import time
+
+# Initialize Pygame
+pygame.init()
+
+# Constants
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+FPS = 60
+
+# Colors (ROYGBIV + extras)
+COLORS = {
+    'RED': (255, 100, 100),
+    'ORANGE': (255, 165, 0),
+    'YELLOW': (255, 255, 100),
+    'GREEN': (100, 255, 100),
+    'BLUE': (100, 150, 255),
+    'INDIGO': (75, 0, 130),
+    'VIOLET': (238, 130, 238)
+}
+
+RAINBOW_ORDER = ['RED', 'ORANGE', 'YELLOW', 'GREEN', 'BLUE', 'INDIGO', 'VIOLET']
+BACKGROUND_COLORS = [(230, 230, 255), (255, 230, 230), (230, 255, 230), (255, 255, 230)]
+
+class Particle:
+    def __init__(self, x, y, color, velocity):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.velocity = velocity
+        self.life = 60
+        self.max_life = 60
+        
+    def update(self):
+        self.x += self.velocity[0]
+        self.y += self.velocity[1]
+        self.velocity = (self.velocity[0] * 0.98, self.velocity[1] * 0.98)
+        self.life -= 1
+        
+    def draw(self, screen):
+        alpha = int(255 * (self.life / self.max_life))
+        color_with_alpha = (*self.color, alpha)
+        size = int(5 * (self.life / self.max_life))
+        if size > 0:
+            pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), size)
+
+class ColorOrb:
+    def __init__(self, x, y, color_name):
+        self.x = x
+        self.y = y
+        self.color_name = color_name
+        self.color = COLORS[color_name]
+        self.radius = 20
+        self.pulse = 0
+        self.collected = False
+        
+    def update(self):
+        self.pulse += 0.2
+        
+    def draw(self, screen):
+        pulse_size = self.radius + math.sin(self.pulse) * 3
+        # Glow effect
+        for i in range(3):
+            glow_color = [min(255, c + 50) for c in self.color]
+            pygame.draw.circle(screen, glow_color, (int(self.x), int(self.y)), 
+                             int(pulse_size + i * 5), 2)
+        # Main orb
+        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), int(pulse_size))
+        pygame.draw.circle(screen, (255, 255, 255), (int(self.x - 5), int(self.y - 5)), 5)
+
+class Huenicorn:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.size = 30
+        self.target_size = 30
+        self.color_sequence = []
+        self.rainbow_streak = 0
+        self.last_sneeze_time = 0
+        self.sneeze_cooldown = 3.0  # 3 seconds
+        
+    def update(self):
+        # Smooth size transition
+        self.size += (self.target_size - self.size) * 0.1
+        
+        # Follow mouse
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        dx = mouse_x - self.x
+        dy = mouse_y - self.y
+        self.x += dx * 0.05
+        self.y += dy * 0.05
+        
+    def collect_color(self, color_name):
+        expected_color = RAINBOW_ORDER[len(self.color_sequence) % 7]
+        
+        if color_name == expected_color:
+            self.color_sequence.append(color_name)
+            self.target_size = min(100, 30 + len(self.color_sequence) * 3)
+            
+            # Complete rainbow sequence
+            if len(self.color_sequence) % 7 == 0:
+                self.rainbow_streak += 1
+                return True  # Rainbow completed
+        else:
+            # Wrong color! Reset sequence and shrink
+            self.color_sequence = []
+            self.target_size = 30
+            self.rainbow_streak = 0
+            
+        return False
+        
+    def can_sneeze(self):
+        return time.time() - self.last_sneeze_time >= self.sneeze_cooldown
+        
+    def sneeze(self):
+        if self.can_sneeze():
+            self.last_sneeze_time = time.time()
+            return True
+        return False
+        
+    def draw(self, screen):
+        # Body (rainbow gradient based on collected colors)
+        body_color = (200, 150, 255)  # Default purple
+        if self.color_sequence:
+            last_color = COLORS[self.color_sequence[-1]]
+            body_color = last_color
+            
+        # Draw body with glow
+        for i in range(3):
+            glow_color = [min(255, c + 30) for c in body_color]
+            pygame.draw.circle(screen, glow_color, (int(self.x), int(self.y)), 
+                             int(self.size + i * 3), 2)
+        pygame.draw.circle(screen, body_color, (int(self.x), int(self.y)), int(self.size))
+        
+        # Eyes
+        eye_offset = self.size * 0.3
+        pygame.draw.circle(screen, (255, 255, 255), 
+                         (int(self.x - eye_offset), int(self.y - eye_offset)), 8)
+        pygame.draw.circle(screen, (255, 255, 255), 
+                         (int(self.x + eye_offset), int(self.y - eye_offset)), 8)
+        pygame.draw.circle(screen, (0, 0, 0), 
+                         (int(self.x - eye_offset), int(self.y - eye_offset)), 4)
+        pygame.draw.circle(screen, (0, 0, 0), 
+                         (int(self.x + eye_offset), int(self.y - eye_offset)), 4)
+        
+        # Horn (if big enough)
+        if self.size > 40:
+            horn_height = (self.size - 30) * 0.8
+            pygame.draw.polygon(screen, (255, 215, 0), [
+                (int(self.x), int(self.y - self.size)),
+                (int(self.x - 8), int(self.y - self.size + horn_height)),
+                (int(self.x + 8), int(self.y - self.size + horn_height))
+            ])
+
+class Game:
+    def __init__(self):
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption("Chroma Chomp - Collect the Rainbow!")
+        self.clock = pygame.time.Clock()
+        
+        self.huenicorn = Huenicorn(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+        self.orbs = []
+        self.particles = []
+        
+        self.score = 0
+        self.background_index = 0
+        self.background_transition = 0
+        
+        self.font = pygame.font.Font(None, 36)
+        self.small_font = pygame.font.Font(None, 24)
+        
+        # Spawn initial orbs
+        self.spawn_orbs()
+        
+    def spawn_orbs(self):
+        while len(self.orbs) < 8:
+            x = random.randint(50, SCREEN_WIDTH - 50)
+            y = random.randint(50, SCREEN_HEIGHT - 50)
+            color_name = random.choice(RAINBOW_ORDER)
+            self.orbs.append(ColorOrb(x, y, color_name))
+            
+    def create_particles(self, x, y, color, count=10):
+        for _ in range(count):
+            velocity = (random.uniform(-5, 5), random.uniform(-5, 5))
+            self.particles.append(Particle(x, y, color, velocity))
+            
+    def sneeze_effect(self):
+        collected_count = 0
+        orbs_to_remove = []
+        
+        # Create massive particle explosion
+        self.create_particles(self.huenicorn.x, self.huenicorn.y, (255, 255, 255), 50)
+        
+        # Collect all orbs on screen
+        for orb in self.orbs:
+            distance = math.sqrt((orb.x - self.huenicorn.x)**2 + (orb.y - self.huenicorn.y)**2)
+            if distance < 200:  # Sneeze range
+                self.create_particles(orb.x, orb.y, orb.color, 15)
+                collected_count += 1
+                orbs_to_remove.append(orb)
+                
+        # Remove collected orbs
+        for orb in orbs_to_remove:
+            self.orbs.remove(orb)
+            
+        # Score bonus
+        self.score += collected_count * 50
+        return collected_count > 0
+        
+    def handle_collision(self, orb):
+        distance = math.sqrt((orb.x - self.huenicorn.x)**2 + (orb.y - self.huenicorn.y)**2)
+        if distance < self.huenicorn.size + orb.radius:
+            # Collect the orb
+            rainbow_completed = self.huenicorn.collect_color(orb.color_name)
+            
+            if rainbow_completed:
+                self.score += 100 * (self.huenicorn.rainbow_streak + 1)
+                self.create_particles(orb.x, orb.y, orb.color, 20)
+                # Change background when rainbow completed
+                self.background_index = (self.background_index + 1) % len(BACKGROUND_COLORS)
+            else:
+                if orb.color_name == RAINBOW_ORDER[len(self.huenicorn.color_sequence) - 1]:
+                    self.score += 10 * max(1, self.huenicorn.rainbow_streak)
+                    self.create_particles(orb.x, orb.y, orb.color, 8)
+                else:
+                    # Wrong color collected - red particles for feedback
+                    self.create_particles(orb.x, orb.y, (255, 0, 0), 5)
+                    
+            return True
+        return False
+        
+    def draw_ui(self):
+        # Score
+        score_text = self.font.render(f"Score: {self.score}", True, (50, 50, 50))
+        self.screen.blit(score_text, (10, 10))
+        
+        # Rainbow streak
+        if self.huenicorn.rainbow_streak > 0:
+            streak_text = self.font.render(f"Rainbow Streak: {self.huenicorn.rainbow_streak}", 
+                                         True, (150, 50, 200))
+            self.screen.blit(streak_text, (10, 50))
+            
+        # Next color needed
+        if len(self.huenicorn.color_sequence) < 7:
+            next_color = RAINBOW_ORDER[len(self.huenicorn.color_sequence) % 7]
+            next_text = self.small_font.render(f"Next: {next_color}", True, COLORS[next_color])
+            self.screen.blit(next_text, (10, 90))
+        else:
+            next_text = self.small_font.render("RAINBOW READY!", True, (255, 215, 0))
+            self.screen.blit(next_text, (10, 90))
+            
+        # Sneeze button
+        sneeze_color = (100, 255, 100) if self.huenicorn.can_sneeze() else (150, 150, 150)
+        pygame.draw.circle(self.screen, sneeze_color, (SCREEN_WIDTH - 60, 60), 30)
+        pygame.draw.circle(self.screen, (255, 255, 255), (SCREEN_WIDTH - 60, 60), 25, 3)
+        
+        sneeze_text = self.small_font.render("SNEEZE", True, (50, 50, 50))
+        text_rect = sneeze_text.get_rect(center=(SCREEN_WIDTH - 60, 50))
+        self.screen.blit(sneeze_text, text_rect)
+        
+        if not self.huenicorn.can_sneeze():
+            cooldown = self.huenicorn.sneeze_cooldown - (time.time() - self.huenicorn.last_sneeze_time)
+            cooldown_text = self.small_font.render(f"{cooldown:.1f}s", True, (100, 100, 100))
+            cooldown_rect = cooldown_text.get_rect(center=(SCREEN_WIDTH - 60, 75))
+            self.screen.blit(cooldown_text, cooldown_rect)
+            
+    def run(self):
+        running = True
+        
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        if self.huenicorn.sneeze():
+                            self.sneeze_effect()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    # Check if sneeze button clicked
+                    mouse_x, mouse_y = pygame.mouse.get_pos()
+                    if (mouse_x - (SCREEN_WIDTH - 60))**2 + (mouse_y - 60)**2 < 30**2:
+                        if self.huenicorn.sneeze():
+                            self.sneeze_effect()
+            
+            # Update
+            self.huenicorn.update()
+            
+            # Update orbs and check collisions
+            orbs_to_remove = []
+            for orb in self.orbs:
+                orb.update()
+                if self.handle_collision(orb):
+                    orbs_to_remove.append(orb)
+                    
+            for orb in orbs_to_remove:
+                self.orbs.remove(orb)
+                
+            # Update particles
+            self.particles = [p for p in self.particles if p.life > 0]
+            for particle in self.particles:
+                particle.update()
+                
+            # Spawn new orbs
+            self.spawn_orbs()
+            
+            # Draw
+            bg_color = BACKGROUND_COLORS[self.background_index]
+            self.screen.fill(bg_color)
+            
+            # Draw orbs
+            for orb in self.orbs:
+                orb.draw(self.screen)
+                
+            # Draw particles
+            for particle in self.particles:
+                particle.draw(self.screen)
+                
+            # Draw huenicorn
+            self.huenicorn.draw(self.screen)
+            
+            # Draw UI
+            self.draw_ui()
+            
+            # Instructions
+            if self.score < 50:
+                instruction_text = self.small_font.render("Move mouse to guide Hue-nicorn! Collect colors in rainbow order (ROYGBIV)", 
+                                                        True, (100, 100, 100))
+                instruction_rect = instruction_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30))
+                self.screen.blit(instruction_text, instruction_rect)
+                
+                sneeze_instruction = self.small_font.render("Click SNEEZE button or press SPACE for rainbow explosion!", 
+                                                          True, (100, 100, 100))
+                sneeze_rect = sneeze_instruction.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 10))
+                self.screen.blit(sneeze_instruction, sneeze_rect)
+            
+            pygame.display.flip()
+            self.clock.tick(FPS)
+            
+        pygame.quit()
+
+if __name__ == "__main__":
+    print("🌈 Welcome to CHROMA CHOMP! 🦄")
+    print("Guide your Hue-nicorn to collect colors in rainbow order!")
+    print("RED → ORANGE → YELLOW → GREEN → BLUE → INDIGO → VIOLET")
+    print("Complete rainbows for bonus points and size increases!")
+    print("Use the SNEEZE button (or SPACE key) for explosive collection!")
+    print("")
+    print("Starting the magical color adventure...")
+    
+    game = Game()
+    game.run()
